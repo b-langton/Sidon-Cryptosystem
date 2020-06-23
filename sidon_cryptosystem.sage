@@ -179,7 +179,7 @@ def publicKey(y,q, F, F_r):
 def convertToLong(element):
     ##Converts an element from a vector over F to a vector over F_q
     long_representation = []
-    print(list(element))
+   
     for l in range(len(list(element))): 
         long_representation += list(vector(list(element)[l]))
     long_representation = vector(long_representation)
@@ -196,5 +196,73 @@ def convertFromLong(element, F, F_r):
     for i in range(r): 
         final_list += [F(list(element)[i*k:(i+1)*k])]
     return(F_r(final_list))
+    
+def getIndices(y,x, k, r): 
+    y = int(y)
+    x = int(x)
+    rk  = r*k
+    t1 = x//rk^3
+    rem = x% rk^3 
+    a1 = rem//rk^2
+    rem = rem%rk^2
+    t2 = rem//rk
+    rem = rem%rk
+    a2= rem 
+    
+    
+    d = y//((k^2-k)*(k^2 - k)/4)
+    rem = y%((k^2-k)*(k^2 - k)/4)
+    l = rem//int(((k^2 - k)/2)) + 1
+    rem = rem%((k^2 - k)/2)
+    j = rem + 1 
+    
+   
+    lx  = 1
+    jx = 1
+    ly = 0
+    jy = 0
+    continuel = True
+    continuej = True
+    startl = k*(k-1)/2
+    startj = k*(k-1)/2
+    for i in range(k-1):
+        if continuel == True:
+            startl -= k-1 - i
+            if l> startl:
+                lx = k-1 - i 
+                ly = l - startl - 1
+                continuel = False
+        if continuej == True:
+            startj -= k-1 - i
+            if j> startj:
+                jx = k-1 - i 
+                jy = j - startj - 1
+                continuej = False
+    return int(t1), int(a1), int(t2), int(a2), int(d), int(lx), int(ly), int(jx), int(jy)
+            
+            
+        
+def getLinearizedCoeff(y, x, k, r, matrixList, c_matrix):
+    t1,a1,t2,a2,d,lx,ly,jx,jy = getIndices(y,x,k,r)
+
+    if t1*r*k + a1 > t2*r*k + a2: 
+      
+        return 0
+    c = c_matrix[a1][a2][d]
+    coeff = c*(matrixList[t1][jy][ly]*matrixList[t2][jx][lx] - matrixList[t1][jy][lx]*matrixList[t2][jx][ly])
+    coeff2 = 0
+    if t1*r*k + a1 != t2*r*k + a2:
+        
+        temp = t1
+        t1 = t2
+        t2 = temp
+
+        temp = a1
+        a1 = a2
+        a2 = temp
+
+        c2 = c_matrix[a1][a2][d]
+        coeff2 = c2*(matrixList[t1][jy][ly]*matrixList[t2][jx][lx] - matrixList[t1][jy][lx]*matrixList[t2][jx][ly])
+    return coeff + coeff2
     
     
