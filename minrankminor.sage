@@ -1,4 +1,5 @@
 load('sidon_cryptosystem.sage')
+import fgb_sage
 ##Function that returns the coeffiecient xth variable in the yth equation in the system
 def getLinearizedCoeff(y, x, k, r, matrixList, c_matrix):
     if y % 100 == 0 and x == 0: 
@@ -135,7 +136,7 @@ def algebraicAttack(q,k,a,b):
     system = [a1.row()*i*b1.column() for i in matrixList]
     system = [system[i][0][0] - rhs[i][0][0]*xn^2 for i in range(len(system))]
     I = ideal(system)
-    gb = I.groebner_basis()
+    gb = fgb_sage.groebner_basis(I)
     I = ideal(gb)
     I  = I.subs(x0 = 1)
     I = I.subs(xn= 1)
@@ -143,6 +144,6 @@ def algebraicAttack(q,k,a,b):
     R_  = R_.remove_var(x0)
     gens = [R_(i) for i in I.gens()]
     I = ideal(gens)
-    I = I.groebner_basis()
+    I = fgb_sage.groebner_basis(I)
     I = I.ideal()
     return I.variety(), matrixList
