@@ -118,3 +118,31 @@ def minorAttack(q,k):
     I = ideal(ideallist)
     return I
             
+def algebraicAttack(q,k,a,b):
+    basefield = GF(q)
+    rk = 2*k
+    y, F, F_r, d, c = ConstructSidon2k(q, k)
+    ##Construct the attacker's F_r
+    y2, F2, F_r2, d2, c2 = ConstructSidon2k(q, k)
+    matrixList, sidonbasis, mult_table, F_r_basis , origbasis = publicKey(y,q,F,F_r)
+    rhs = [a.row()*i*b.column() for i in matrixList]
+    R_ = PolynomialRing(GF(q), ['x' + str(i) for i in range(2*k)] + ['xn'], order = "lex")
+    indeterminates = R_.gens()[:-1]
+    xn = R_.gens()[-1]
+    R_.inject_variables()
+    a1 = vector(indeterminates[0:k])
+    b1 = vector(indeterminates[k:])
+    system = [a1.row()*i*b1.column() for i in matrixList]
+    system = [system[i][0][0] - rhs[i][0][0]*xn^2 for i in range(len(system))]
+    I = ideal(system)
+    gb = I.groebner_basis()
+    I = ideal(gb)
+    I  = I.subs(x0 = 1)
+    I = I.subs(xn= 1)
+    R_  = R_.remove_var(xn)
+    R_  = R_.remove_var(x0)
+    gens = [R_(i) for i in I.gens()]
+    I = ideal(gens)
+    I = I.groebner_basis()
+    I = I.ideal()
+    return I.variety(), matrixList
