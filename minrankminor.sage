@@ -119,13 +119,16 @@ def minorAttack(q,k):
     I = ideal(ideallist)
     return I
             
-def algebraicAttack(q,k,a,b):
+##Algebraic attack implementation is also here
+def makePublicKey(q,k):
     basefield = GF(q)
     rk = 2*k
     y, F, F_r, d, c = ConstructSidon2k(q, k)
     ##Construct the attacker's F_r
     y2, F2, F_r2, d2, c2 = ConstructSidon2k(q, k)
     matrixList, sidonbasis, mult_table, F_r_basis , origbasis = publicKey(y,q,F,F_r)
+    return matrixList
+def algebraicAttack(q,k,a,b, matrixList):
     rhs = [a.row()*i*b.column() for i in matrixList]
     R_ = PolynomialRing(GF(q), ['x' + str(i) for i in range(2*k)] + ['xn'], order = "lex")
     indeterminates = R_.gens()[:-1]
