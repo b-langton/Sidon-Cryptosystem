@@ -1,6 +1,17 @@
 load('sidon_cryptosystem.sage')
 import fgb_sage
-##Function that returns the coeffiecient xth variable in the yth equation in the system
+##NOTE: FGB_SAGE MUST BE INSTALLED TO USE SOME FUNCTIONS
+"""Function that returns the coeffiecient of the xth variable in the yth equation in the system
+
+    Parameters: 
+            y,x: Location in the matrix
+            k: parameter associated with sidon space
+            r: parameter associated with sidon space 
+            matrixList: Public key of sidon cryptosystem
+            c_matrix: matrix associated with chosen basis of F_q^n in minrank minor attack 
+    
+    Returns: The appropriate entry of the matrix_from_rows
+"""
 def getLinearizedCoeff(y, x, k, r, matrixList, c_matrix):
     if y % 100 == 0 and x == 0: 
         print(y)
@@ -29,6 +40,7 @@ def getLinearizedCoeff(y, x, k, r, matrixList, c_matrix):
     return coeff + coeff2
 
 ##Helper function that breaks y and x into the 9 indexes that specify an equation and variable in the system
+##As we construct the matrix for the system of equations, we will use this helper function to help get the right minor from the right matrices. 
 def getIndices(y,x, k, r): 
     y = int(y)
     x = int(x)
@@ -73,7 +85,10 @@ def getIndices(y,x, k, r):
                 jy = j - startj - 1
                 continuej = False
     return int(t1), int(a1), int(t2), int(a2), int(d), int(lx), int(ly), int(jx), int(jy)
-
+    
+    
+##This function constructs the matrix associated to the minrank minor attack and returns the ideal that is
+##equivalent to the homogeneous system of equations that comes from the minor attack. Does not solve the system. r is 2. 
 def minorAttack(q,k):
     r = 2
     basefield = GF(q)
@@ -88,6 +103,7 @@ def minorAttack(q,k):
          F_r_basis_new = Matrix(basefield, rk, lambda i,j: basefield.random_element())
     cob_matrix = F_r_basis_new.inverse()
     basiselements = []
+
     ##represent the multiplication table of the new basis over that basis
     for i in range(rk): 
         basiselements += [convertFromLong(F_r_basis_new[i], F, F_r)]
@@ -97,9 +113,10 @@ def minorAttack(q,k):
         for j in range(rk): 
             element = convertToLong(new_mult_table[i][j])
             c_matrix[i][j] = element*cob_matrix
+
     ##Construct the coefficient matrix for the system. Not efficient but works for small k 
     eqn_mat = Matrix(basefield, (k^3*(k-1)^2)/2, rk^4, lambda i,j: getLinearizedCoeff(i,j, k, r, matrixList, c_matrix))
-    R = PolynomialRing(GF(q),'x', 36, order = "degrevlex")
+    R = PolynomialRing(GF(q),'x', 4*k*k, order = "degrevlex")
     indeterminates = R.gens()
     R.inject_variables()
     pivot_cols = eqn_mat.transpose().pivot_rows()
@@ -120,6 +137,9 @@ def minorAttack(q,k):
     return I
             
 ##Algebraic attack implementation is also here
+
+##A slightly different style of implementation from the minor attack, this first method returns a public key from a random sidon cryptosystem
+##with parameters q and k 
 def makePublicKey(q,k):
     basefield = GF(q)
     rk = 2*k
@@ -128,6 +148,9 @@ def makePublicKey(q,k):
     y2, F2, F_r2, d2, c2 = ConstructSidon2k(q, k)
     matrixList, sidonbasis, mult_table, F_r_basis , origbasis = publicKey(y,q,F,F_r)
     return matrixList
+    
+##This method solves the algebraic attack that extracts a and b, equivalent to the original message from the transmitted message. 
+##Most time intensive part is computing the first groebner basis. Computational time grows exponentially with k. 
 def algebraicAttack(q,k,a,b, matrixList):
     rhs = [a.row()*i*b.column() for i in matrixList]
     R_ = PolynomialRing(GF(q), ['x' + str(i) for i in range(2*k)] + ['xn'], order = "lex")

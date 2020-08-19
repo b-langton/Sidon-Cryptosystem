@@ -1,5 +1,9 @@
+"""Constructs a Sidon Space in Gq(rk, k) for r > 2 
+   Paramters are q, k, and r defining F_q, F_q^k, and F_q^(rk) as used in the sidon space paper
+   returns y, F_qn element defining the sidon space, F which is F_q^k, and F_n which is F_q^(rk)
+"""
 def ConstructSidon(q, k, r): 
-    ##Constructs a Sidon Space in Gq(rk, k) for r > 2 
+    
     
     ##Define the field F_p^k and the polynomial ring over that field
     assert(r!=2)
@@ -10,7 +14,7 @@ def ConstructSidon(q, k, r):
     irred_poly1 = R.irreducible_element(r)
     irred_poly2 = R.irreducible_element(r)
     F_r.<x> = F.extension(irred_poly1)[]
-    F_ = F.extension(irred_poly1)
+    F_n = F.extension(irred_poly1)
     ##find a root of this in F_q^rk
     roots = irred_poly2(x).roots()
 
@@ -18,10 +22,14 @@ def ConstructSidon(q, k, r):
     
     ##returns a tuple containing y, the subfield F_q^k and the field F_q^rk
     ##The Sidon space is defined as u + u^p*y for u in F 
-    return y, F, F_
-
+    return y, F, F_n
+"""
+Constructs a Sidon Space in Gq(2k, k), q cannot equal 2. 
+Parameters q and k are the same as in ConstructSidon. 
+Returns the same things as constructSidon, but additionally returns b and c, the linear and constant coefficients of the 
+irreducible quadratic polynomial that y is a root of. These are necessary for factoring products of elements from the sidon space. 
+"""
 def ConstructSidon2k(q, k): 
-    ##Constructs a Sidon Space in Gq(2k, k), q cannot equal 2 
     assert(q!=2)
     
     ##Define the field F_p^k and the polynomial ring
@@ -41,18 +49,27 @@ def ConstructSidon2k(q, k):
     
   
     ##Construct the second extension field as a polynomial ring over the first modded out by this irreducible element
-    X  = F.extension(irred_poly)
+    F_n  = F.extension(irred_poly)
     F_2k.<x> = F.extension(irred_poly)[]
     roots = irred_poly(x).roots() 
     
     ##Return a root of the polynomial as well as info about the two fields 
     y = roots[0][0]
     
-    return y, F, X, irred_poly.list()[1], irred_poly.list()[0]
+    return y, F, F_n, irred_poly.list()[1], irred_poly.list()[0]
     
-    
+"""Factoring algorithm for Sidon spaces with r > 2 
+
+    Parameters: 
+            product: the product of two elements to be factored 
+            y: The root of the irreducible polynomial that defines the sidon space 
+            q: size of the base field
+            F: F_q^k as described in the paper 
+            F_r: F_q^n, the extension field the sidon space resides in
+
+    Returns the two elements that were originally multiplied to get the product 
+"""
 def factor(product, y, q, F, F_r): 
-    ##Factoring algorithm for Sidon spaces with r > 2 
     r = len(list(F_r.modulus())) - 1 
     p = F.characteristic()
     assert(r > 2)
@@ -86,6 +103,15 @@ def factor(product, y, q, F, F_r):
         ans1 = ans1*product/((ans1 + ans1^q*y)*(ans2 + ans2^q*y))
     return ans1, ans2
 
+"""Factoring algorithm for when r = 2. 
+
+    Parameters: 
+        The first 5 are identical to the factor method 
+        b: the coefficient of the linear term of the irrducible quadratic polynomial used to define the sidon space 
+        c: the constant term of the same irreducible quadratic polynomial
+    
+    Returns the same thing is factor. 
+"""
 def factor2(product, y,q,F, F_r, b, c): 
     ##factoring algorithm for Sidon space with r = 2 
     p = F.characteristic()
@@ -134,8 +160,22 @@ def factor2(product, y,q,F, F_r, b, c):
         ans1 = ans1*product/((ans1 + ans1^q*y)*(ans2 + ans2^q*y))
     return ans1, ans2
     
+"""Generates the public key (and associated private key) using info from the given sidon space 
+
+    Parameters: 
+            y: The F_q^n element that defines the sidon space 
+            q: Size of the basefield 
+            F: F_q^k as used in paper 
+            F_r: F_q^n, the extension field the sidon space lives in. 
+    
+    Returns: 
+            matrixList: The public key, coefficient matrices of the multiplication table of the sidon space 
+            sidonbasis: The basis of the sidon space used, as a list of F_q^n elements 
+            mult_table: The multiplication table of sidonbasis
+            F_r_basis: The basis of F_q^n used to get the coefficient matrices 
+            origbasis: Basis of F_q^k used to construct sidonbasis 
+"""
 def publicKey(y,q, F, F_r): 
-    ##Generates the public key (and associated private key) using info from the given sidon space 
     p = F.characteristic()
     k = len(F.modulus().list()) - 1
     rk = (len(F_r.modulus().list()) - 1)*k
@@ -176,8 +216,12 @@ def publicKey(y,q, F, F_r):
     for i in range(rk): 
         matrixlist[i] = Matrix(basefield, k, lambda l,j: vec_list[l][j][i])
     return matrixlist, sidonbasis, mult_table, F_r_basis, origbasis
+
+"""Converts an element in Fq_n to a vector over F_q
+    Parameter: An element of F_q^n 
+    Returns: A vector over F_q of length n representing that element 
+"""
 def convertToLong(element):
-    ##Converts an element from a vector over F to a vector over F_q
     long_representation = []
    
     for l in range(len(list(element))): 
@@ -186,8 +230,16 @@ def convertToLong(element):
     long_representation
     return long_representation
 
+"""Converts an element from F_r represented as a vector over F_q to an element of F_r
+
+    Parameters: 
+            element: a vector of length n over F_q 
+            F: F_q^k
+            F_r: The extension field of F_q^k, F_q^n 
+    Returns: The corresponding element of F_r 
+"""
 def convertFromLong(element, F, F_r):
-    ##Converts an element from F_r represented as a vector over F_q to a vector over F
+
     
     k = len(F.modulus().list()) - 1
     r = len(F_r.modulus().list()) - 1

@@ -1,0 +1,1348 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////------------------------//////////////////////////////////////////////////////////
+//////////////////////////////////////|------F5libary.lib------|/////////////////////////////////////////////////////////
+///////////////////////////////////////------------------------//////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+version = "$Id: f5_library,v 1.1 2009/01/26";
+info = "
+LIBRARY: f5_library An implementation of Faugere's F5 algorithm for computing Groebner bases.
+AUTHOR: Christian Eder, ederc@mathematik.uni-kl.de
+AUTHOR: John Perry, john.perry@usm.edu
+
+PROCEDURES:
+
+    [A] add_labeled_polynomial(p, i, u, n);                          adds a new polynomial p with its signature
+        add_rule(n);                                                 adds a new rule for the Rewritten Criterion
+       
+    [B] b2(i,j,lts,checked_pairs);                                   checks if there are pairs fulfilling the 2nd
+                                                                     Buchberger Criterion
+        basis(id);                                                   computes Groebner basis of the ideal id
+                                                                     using the original algorithm F5
+        basis_r(id);                                                 computes Groebner basis of the ideal id
+                                                                     using Steger's variant algorithm F5R
+        basis_c(id);                                                 computes Groebner basis of the ideal id
+                                                                     using Eder and Perry's variant algorithm F5C
+  
+    [C] cps_of_degree(cps, d);                                       computes the list of critical pairs with lcm = d
+        crit_pair(k, l, i, g_prev);                                  computes or deletes (if the F5 Criterion holds)
+                                                                     a critical pair with rightly ordered signatures
+        
+    [E] equal_signatures(i, t, j, u);                                tests if two polynomials t and u have the same
+                                                                     signature
+        
+    [F] find_reductor(k, g_prev, g_curr);                            searches for a reductor of the polynomial
+                                                                     corresponding to int k
+        find_smallest_degree_cp(cps);                                find the smallest degree of a list cps of
+                                                                     critical pairs
+        first_signature_smaller(i, t, j, u);                         tests which polynomial has a lower signature
+        
+    [I] ideal_to_list(ideal id);                                     converts an ideal to a list 
+        insert_by_incr_sig(to_do, new_do);                           inserts element new_do by ordered increasing lcm
+                                                                     in list to_do
+        is_gb(g);                                                    tests if list g is a Groebner basis
+        is_rewritable(u, k);                                         checks if the polynomial corresponding to poly u
+                                                                     and int k is rewritable or not
+       
+    [L] lcm(t,u);                                                    computes the lowest common multiple of the
+                                                                     terms t and u
+        list_to_ideal(list f);                                       converts a list to an ideal i   
+       
+    [P] incremental_basis(f, i, g_prev);                             main algorithm in each iteration step when another
+                                                                     element f from the sequence F is added to the
+                                                                     Groebner basis computation
+        partition_pairs_by_increasing_lcm(p, left, right, pivot);    divides list p for quicksort
+        partition_polys(f, left, right, pivot);                      divides list f for quicksort
+        partition_S_incr_sig(S, left, right, pivot);                 divides list S for quicksort
+       
+    [Q] quicksort_pairs_by_increasing_lcm(p, left, right);           sorts the list p by the quicksort algorithm
+        quicksort_polys(f, left, right);                             sorts the list f by the quicksort algorithm
+        quicksort_S_incr_sig(S, left, right);                        sorts the list S by the quicksort algorithm
+       
+    [R] reduction(s, g_prev, g_curr);                                reduces the polynomials corresponding to elements
+                                                                     of the list s by polynomials in g_prev and calls
+                                                                     top_reduction with g_curr
+       
+    [S] setup_globals();                                             sets global variables
+        sort_by_decreasing_total_degree(f);                          sorts a list f by decreasing total degree
+        sort_pairs_by_increasing_lcm(p);                             sorts the list p by increasing lcm
+        sort_S_by_increasing_signature(S);                           sorts the list S by increasing signature
+        spols(pairs);                                                computes a list of critical pairs if these are
+                                                                     not rewritable
+       
+    [T] top_reducible(t, f);                                         tests if polynomial t is top reducible the polynomials
+                                                                     in the list f
+        top_reduction(k, g_prev, g_curr);                            top reduces the polynomial corresponding to int k
+                                                                     by elements of g_curr which are not rewritable
+                                                                     or normalized
+
+
+GLOBAL VARIABLES:
+
+      indices and multipliers:                                     together, these constitute the signatures of the
+                                                                     polynomials; indices[k] and multipliers[k] correspond
+                                                                     to polynomials[k]
+        polynomials:                                                 the polynomials that were generated during the
+                                                                     computation; this is different from the final result
+                                                                     of basis(), as some of the polynomials may be zero
+        rule_multiplier and rule_redirect:                           together, these constitute the rewrite rules;
+                                                                     rule_multiplier[k] corresponds to rule_redirect[k]
+        zero_reductions:                                             critical pairs that reduced to zero
+
+";
+
+// USAGE (from Singular)
+// > LIB "f5_library.lib";
+// ** loaded f5_library.lib (1.1,2009/01/26")
+// > ring R = 0,(x,y,z,t),dp;
+// > list l = x2y-z2t,xz2-y2t,yz3-x2t2;
+// > ideal g = basis(l);
+// ...a lot of output, hopefully not an error...
+//
+// This file contains three variants of F5:
+// * basis_c is the algorithm as published by Faugere;
+// * basis_r is the algorithm as modified by Stegers, with corrections, and
+// * basis_c is the algorithm as modified by Eder and Perry.
+//
+// For some interesting examples from Till Stegers' thesis,
+// download the file
+//      www.math.usm.edu/perry/Research/f5ex.lib
+// and uncomment the line below.
+// LIB "f5ex.lib";
+// Stegers appears to have some typos in his reports on pp. 44--46
+// but the comparisons are still interesting.
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////-------PROCEDURES------///////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc setup_globals()
+"USAGE:   setup_globals();
+RETURN:   nothing
+NOTE:     Sets the global variables to work with in all of the procedures of this library.
+          This possibly improves the algorithm as we are working all the time with the same
+          global variable and do not copy them all the time they get exported by a procedure.
+KEYWORDS: global variables"
+{
+  int last_polynomial;
+  list indices, polynomials, multipliers;
+  list rule_multiplier, rule_redirect;
+  list generating_pairs;
+  list zero_reductions;
+  list g_prev, g_curr, g_topred;
+  list p;
+  list p_sig = list();
+  list p_lcm = list();
+  list p_d = list();
+  list p_u = list();
+  list p_v = list();
+  ideal previous_gb, previous_lt;
+  ideal gb;
+  int basis_time, ib_time, cp_time, sp_time, tp_time, fsd_time, cpsd_time, red_time, tr_time, fr_time, ir_time, itr_time;
+           
+  basis_time = 0; ib_time = 0; cp_time = 0; fsd_time = 0; cpsd_time = 0;
+  tp_time; sp_time = 0; red_time = 0; tr_time = 0; ir_time = 0; fr_time = 0;
+  itr_time = 0;
+  
+  export(gb);
+  export(last_polynomial);
+  export(polynomials);
+  export(indices); export(multipliers);
+  export(rule_multiplier); export(rule_redirect);
+  export(previous_gb); export(previous_lt);
+  export(generating_pairs);
+  export(zero_reductions);
+  export(g_prev); export(g_curr); export(g_topred);
+  export(p); export(p_sig); export(p_lcm); export(p_d); export(p_u); export(p_v);
+  export(basis_time); export(ib_time);
+  export(cp_time); export(sp_time);
+  export(red_time); export(tr_time); export(fr_time);
+  export(ir_time); export(itr_time);
+  export(tp_time); export(fsd_time); export(cpsd_time);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+           
+proc list_to_ideal(list f)
+"USAGE:   list_to_ideal(f); f list
+RETURN:   ideal i: ideal generated by the elements of the list f
+NOTE:     Converts a list to an ideal with its generators being
+          exactly the elements of the list
+SEE ALSO: ideal_to_list
+KEYWORDS: conversion, list, ideal
+{
+    int i;
+    for(i=1;i<=size(f);i++) {
+       gb = gb + f[i]; 
+    }
+    return(gb);
+}
+           
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc ideal_to_list(ideal id)
+"USAGE:    ideal_to_list(id); id ideal
+RETURN:   list f: list of the generators of the ideal id
+NOTE:     Converts an ideal to a list with the elements of the list
+          being the generators of the ideal 
+SEE ALSO: list_to_ideal
+KEYWORDS: conversion, ideal, list
+{       
+    list l;
+    int i;
+    for(i=1;i<=size(id);i++) {
+       l = insert(l,id[i],size(l)); 
+    }
+    return(l);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc basis(ideal id)
+"USAGE:    basis(id); id ideal
+RETURN:   ideal g: Groebner basis of id
+NOTE:     Computes a Groebner basis using our implementation of the F5 algorithm
+SEE ALSO: incremental_basis
+KEYWORDS: f5, groebner basis
+EXAMPLE:  example basis; shows an example of Groebner basis computation of Cyclic(4)"
+{
+  setup_globals();
+  timer = 0;
+  int start_time = timer;
+  list f;       
+  f = ideal_to_list(interred(id));       
+  int i, m, ctr, g_ctr, cputime;
+  list empty_list1, empty_list2, g_final;
+  poly one_polynomial=1;
+  
+  system("--ticks-per-sec",100);
+  cputime = timer;
+  f = sort_by_increasing_total_degree(f);
+  m = size(f);
+  // set up labeled polynomials
+  indices[1] = 1;
+  multipliers[1] = 1;
+  polynomials[1] = f[1];
+  rule_multiplier[1] = list();
+  rule_redirect[1] = list();
+  
+  
+  // iterate through f
+  g_prev[1] = 1;
+  previous_gb = polynomials[1];
+  previous_lt = leadmonom(polynomials[1]);
+  last_polynomial = 1;
+  attrib(previous_gb, "isSB", 1);
+  attrib(previous_lt, "isSB", 1);
+  
+  for (ctr = 2; ctr <= m; ctr++) {
+    last_polynomial++;
+    polynomials[last_polynomial] = f[ctr] * 1/leadcoef(f[ctr]);
+    incremental_basis(ctr);
+    g_prev = g_curr;
+    g_curr = list();
+    for (g_ctr = 1; g_ctr <= size(g_prev); g_ctr++) {
+      if (polynomials[g_prev[g_ctr]] == one_polynomial) {
+        return(1);
+      }
+    }
+    // setup reducers
+    previous_gb = 0;
+    previous_lt = 0;
+    for (i = 1; i <= size(g_prev); i++) {
+      previous_gb = previous_gb + polynomials[g_prev[i]];
+      previous_lt = previous_lt + leadmonom(polynomials[g_prev[i]]);
+    }
+    printf("%s polynomials in basis", size(g_prev));
+    //for (i = 1; i <= size(g_prev); i++) {
+    //  print(lead(polynomials[g_prev[i]]));
+    //}
+    attrib(previous_gb, "isSB", 1);
+    attrib(previous_lt, "isSB", 1);
+  }
+  basis_time = timer - start_time - ib_time;
+  print([timer - start_time, basis_time, ib_time, cp_time, fsd_time, cpsd_time, sp_time, tp_time, red_time, fr_time, tr_time, ir_time, itr_time]);
+
+  // done! :-)
+  print(" ");
+  print("number of zero reductions: "+string(size(zero_reductions)));
+  print("number of elements in g: "+string(size(previous_gb)));
+  print("cpu time for gb computation: "+string(timer-cputime)+"/1000 sec");
+  gb = list_to_ideal(previous_gb);
+  return(gb);
+}
+example
+{ "EXAMPLE:";
+  cyclic_n(4);
+  print("Cyclic(4):");
+  i;
+  ideal g = basis(i);
+  print("Groebner basis:");
+  g;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc basis_r(ideal id)
+"USAGE:   basis(id); id ideal
+RETURN:   ideal g: Groebner basis of id
+NOTE:     Computes a Groebner basis using our implementation of the F5 algorithm
+SEE ALSO: incremental_basis
+KEYWORDS: f5, groebner basis
+EXAMPLE:  example basis; shows an example of Groebner basis computation of Cyclic(4)"
+{
+  setup_globals();
+  int start_time = timer;
+  list f;
+  timer = 0;
+  f = ideal_to_list(interred(id));       
+  int i, m, ctr, g_ctr, cputime;
+  list empty_list1, empty_list2, g_final;
+  poly one_polynomial=1;
+  
+  system("--ticks-per-sec",100);
+  cputime = timer;
+  f = sort_by_increasing_total_degree(f);
+  m = size(f);
+  // set up labeled polynomials
+  indices[1] = 1;
+  multipliers[1] = 1;
+  polynomials[1] = f[1];
+  rule_multiplier[1] = list();
+  rule_redirect[1] = list();
+  
+  
+  // iterate through f
+  g_prev[1] = 1;
+  previous_gb = polynomials[1];
+  previous_lt = leadmonom(polynomials[1]);
+  last_polynomial = 1;
+  attrib(previous_gb, "isSB", 1);
+  attrib(previous_lt, "isSB", 1);
+  
+  for (ctr = 2; ctr <= m; ctr++) {
+    last_polynomial++;
+    polynomials[last_polynomial] = f[ctr] * 1/leadcoef(f[ctr]);
+    incremental_basis(ctr);
+    g_prev = g_curr;
+    g_curr = list();
+    for (g_ctr = 1; g_ctr <= size(g_prev); g_ctr++) {
+      if (polynomials[g_prev[g_ctr]] == one_polynomial) {
+        return(1);
+      }
+    }
+    // simplify to reduced gb
+    previous_gb = 0;
+    previous_lt = 0;
+    for (i = 1; i <= size(g_prev); i++) {
+      previous_gb = previous_gb + polynomials[g_prev[i]];
+    }
+    // simplify to reduced gb
+    previous_gb = interred(previous_gb);
+    for (i = 1; i <= size(previous_gb); i++) {
+      previous_lt = previous_lt + leadmonom(previous_gb[i]);
+    }
+    attrib(previous_gb, "isSB", 1);
+    attrib(previous_lt, "isSB", 1);
+  }
+  basis_time = timer - start_time - ib_time;
+  print([timer - start_time, basis_time, ib_time, cp_time, fsd_time, cpsd_time, sp_time, tp_time, red_time, fr_time, tr_time, ir_time, itr_time]);
+
+  // done! :-)
+  print(" ");
+  print("number of zero reductions: "+string(size(zero_reductions)));
+  print("number of elements in g: "+string(size(previous_gb)));
+  print("cpu time for gb computation: "+string(timer-cputime)+"/1000 sec");
+  gb = list_to_ideal(previous_gb);
+  return(gb);
+}
+example
+{ "EXAMPLE:";
+  cyclic_n(4);
+  print("Cyclic(4):");
+  i;
+  ideal g = basis_r(i);
+  print("Groebner basis:");
+  g;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc basis_c(ideal id)
+"USAGE:    basis(id); ideal id
+RETURN:   ideal g: Groebner basis of f
+NOTE:     Computes a Groebner basis using our implementation of the F5 algorithm
+          Note that we optimized the implementation minimalizing and reducing the 
+          computed Groebner basis before a new element f_i from the generators of 
+          the given ideal is added to the algorithm
+SEE ALSO: incremental_basis
+KEYWORDS: f5, groebner basis
+EXAMPLE:  example basis; shows an example of Groebner basis computation of Cyclic(4)"
+{
+  setup_globals();
+  p_lcm = list();
+  p_u = list();
+  p_v = list();
+  p_sig = list();
+  timer = 0;
+  list f;
+  f = ideal_to_list(interred(id));       
+  int i, j, m, n, ctr, g_ctr, found, cputime;
+  list empty_list1, empty_list2, empty_list3, empty_list4, empty_list5, empty_list6;
+  poly t;
+  poly one_polynomial=1;
+  
+  system("--ticks-per-sec",100);
+  cputime = timer;
+  f = sort_by_increasing_total_degree(f);
+  m = size(f);
+  // set up labeled polynomials
+  indices[1] = 1;
+  multipliers[1] = 1;
+  polynomials[1] = f[1];
+  rule_multiplier[1] = list();
+  rule_redirect[1] = list();
+  
+  
+  // iterate through f
+  g_prev[1] = 1;
+  previous_gb = polynomials[1];
+  previous_lt = leadmonom(polynomials[1]);
+  last_polynomial = 1;
+  attrib(previous_gb, "isSB", 1);
+  attrib(previous_lt, "isSB", 1);
+  
+  for (ctr = 2; ctr <= m; ctr++) {
+    printf("all %s basis %s ib %s cp %s fsd %s cpsd %s sp %s tp %s red %s fr %s tr %s ir %s itr %s", timer - cputime, basis_time, ib_time, cp_time, fsd_time, cpsd_time, sp_time, tp_time, red_time, fr_time, tr_time, ir_time, itr_time);
+    printf("Iteration %s", ctr);
+    last_polynomial++;
+    polynomials[last_polynomial] = f[ctr] * 1/leadcoef(f[ctr]);
+    incremental_basis(last_polynomial);
+    g_prev = g_curr;
+    g_curr = list();
+    for (g_ctr = 1; g_ctr <= size(g_prev); g_ctr++) {
+      if (polynomials[g_prev[g_ctr]] == one_polynomial) {
+        return(1);
+      }
+    }
+    // simplify to reduced gb
+    previous_gb = 0;
+    previous_lt = 0;
+    for (i = 1; i <= size(g_prev); i++) {
+      previous_gb = previous_gb + polynomials[g_prev[i]];
+    }
+    // simplify to reduced gb
+    previous_gb = interred(previous_gb);
+    for (i = 1; i <= size(previous_gb); i++) {
+      previous_lt = previous_lt + leadmonom(previous_gb[i]);
+    }
+    // create information on minimal gb
+    if (ctr != m) {
+      setup_reduced_basis();
+    }
+    attrib(previous_gb, "isSB", 1);
+    attrib(previous_lt, "isSB", 1);
+  }
+  basis_time = timer - cputime - ib_time;
+  printf("all %s basis %s ib %s cp %s fsd %s cpsd %s sp %s tp %s red %s fr %s tr %s ir %s itr %s", timer - cputime, basis_time, ib_time, cp_time, fsd_time, cpsd_time, sp_time, tp_time, red_time, fr_time, tr_time, ir_time, itr_time);
+  //print([timer - cputime, basis_time, ib_time, cp_time, fsd_time, cpsd_time, sp_time, tp_time, red_time, fr_time, tr_time, ir_time, itr_time]);
+
+  // done! :-)
+  print(" ");
+  print("number of zero reductions: "+string(size(zero_reductions)));
+  print("number of elements in g: "+string(size(previous_gb)));
+  print("cpu time for gb computation: "+string(timer-cputime)+"/1000 sec");
+  gb = list_to_ideal(previous_gb);
+  return(gb);       
+}
+example
+{ "EXAMPLE:";
+  cyclic_n(4);
+  print("Cyclic(4):");
+  i;
+  ideal g = basis_c(i);
+  print("Groebner basis:");
+  g;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc setup_reduced_basis() {
+  int i, j;
+  poly t;
+  
+  polynomials = list();
+  indices = list();
+  multipliers = list();
+  rule_redirect = list();
+  rule_multiplier = list();
+  g_prev = list();
+  for (i = 1; i<= size(previous_gb); i++) {
+    rule_redirect[i] = list();
+    rule_multiplier[i] = list();
+  }
+  for (i = 1; i <= size(previous_gb); i++) {
+    last_polynomial = i;
+    polynomials[i] = previous_gb[i];
+    g_prev[size(g_prev) + 1] = i;
+    indices[i] = i;
+    multipliers[i] = 1;
+    /*for (j = i + 1; j <= size(previous_gb); j++) {
+      t = lead(previous_gb[i]) / gcd(lead(previous_gb[i]), lead(previous_gb[j]));
+      add_rule(t, j, 0);
+    }*/
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc sort_by_increasing_total_degree(list f)
+"USAGE:   sort_by_increasing_total_degree(f); f list
+RETURN:   list fs: fs is a list of the elements of f sorted by increasing total degree
+NOTE:     Sorts the given list of polynomials f by increasing total degree using the quicksort_polys procedure.
+SEE ALSO: quicksort_polys, partition_polys
+KEYWORDS: sort, total degree, quicksort"
+{
+  return(quicksort_polys(f,1,size(f)));
+}
+
+static proc quicksort_polys(list f, int left, int right)
+"USAGE:   quicksort_polys(f, left, right); list f, int left, int right
+RETURN:   list fs: fs is a list of the elements of f sorted by increasing total degree
+NOTE:     Sorts the given list of polynomials f using the quicksort with boundaries given by left and right. 
+          For the computation of the pivot index the procedure partition_polys is used.
+SEE ALSO: sort_by_increasing_total_degree, partition_polys
+KEYWORDS: sort, pivot, quicksort"
+{
+  int pivot_index;
+  if (right > left) {
+    f, pivot_index = partition_polys(f, left, right, left);
+    f = quicksort_polys(f, left, pivot_index-1);
+    f = quicksort_polys(f, pivot_index+1, right);
+  }
+  return(f);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc partition_polys(list f, int left, int right, int pivot)
+"USAGE:   partition_polys(f, left, right, pivot); list f, int left, int right, int pivot
+RETURN:   list f, int pivot_index: Data needed for recursively computing quicksort
+NOTE:     Splits the list f using pivot. The returned data is needed by the procedure qicksort_polys 
+          to sort a list of polynomials.
+SEE ALSO: sort_by_increasing_total_degree, quicksort_polys
+KEYWORDS: sort, pivot, quicksort"
+{
+  int i;
+  int first_smaller;
+  poly pivot_poly, temp;
+  
+  pivot_poly = f[pivot];
+  f[pivot] = f[right];
+  f[right] = pivot_poly;
+  first_smaller = left;
+  for (i = left; i < right; i++) {
+    if (f[i] < pivot_poly) {
+      temp = f[first_smaller];
+      f[first_smaller] = f[i];
+      f[i] = temp;
+      first_smaller = first_smaller + 1;
+    }
+  }
+  f[right] = f[first_smaller];
+  f[first_smaller] = pivot_poly;
+  return(f,first_smaller);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc incremental_basis(int i)
+"USAGE:   incremental_basis(f, i, g_prev); poly f, int i, list g_prev
+RETURN:   list g_curr: data to set up the newly computed Groebner basis with the new element f added
+NOTE:     Adding a new element f of index i to the previously computed Groebner basis g_prev to
+          compute a new Groebner basis, in the meantime g_curr. For this all new critical pairs
+          consisting of the new element f and elements of g_prev are pre-computed and check in the
+          other procedure spols for Faugere's criteria. Afterwards the reduction of the left critical
+          pairs is done in the procedure reduction
+SEE ALSO: basis, crit_pair, spols, reduction
+KEYWORDS: partial groebner basis, critical pairs"
+{
+  int curr_idx;
+  int d, j, k, l, a, b;
+  list s, r;
+  poly new_lcm, new_sig_mul, new_u, new_v;
+  list empty1, empty2;
+  
+  printf("Iteration %s", i);
+  // printf("adding %s", f);
+  int start_time = timer;
+  curr_idx = last_polynomial;
+  rule_multiplier[i] = list();
+  rule_redirect[i] = list();
+  indices[curr_idx] = i;
+  multipliers[curr_idx] = 1;
+  g_curr = insert(g_prev,curr_idx);
+  // generate new critical pairs
+  crit_pair(last_polynomial,i);
+  // loop through critical pairs
+  for ( ; size(p) != 0; ) {
+    d = find_smallest_degree_cp();
+    cps_of_degree(d);
+    //printf("Processing %s critical pairs of degree %s", size(p_d), d);
+    s = spols();
+    trim_p();
+    r = reduction(s);
+    for (k = 1; k <= size(r); k++) {
+      //printf("polynomial %s reduced to %s", r[k], polynomials[r[k]]);
+      crit_pair(r[k],i);
+      g_curr = insert(g_curr,r[k],0);
+    }
+  }
+  //print([start_time, timer]);
+  ib_time = ib_time + timer - start_time;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc find_smallest_degree_cp()
+"USAGE:   find_smallest_degree_cp(cps); list cps
+RETURN:   int d: smallest degree of all the lcms of the critical pairs inside cps
+NOTE:     Computes the smallest degree of all the lcms of the critical pairs of polynomials                              
+          inside the list cps.
+SEE ALSO: basis, incremental_basis, crit_pair, spols
+KEYWORDS: degree, lowest common multiple, critical pairs"
+{
+  int i, d, d_new;
+  int start_time = timer;
+  d = deg(p_lcm[1]);
+  for (i = 2; i <= size(p_lcm); i++) {
+    d_new = deg(p_lcm[i]);
+    if (d > d_new) {
+      d = d_new;
+    }
+  }
+  fsd_time = fsd_time + timer - start_time;
+  return(d);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc lcm(poly t, poly u)
+"USAGE:   lcm(t,u); poly t, poly u
+RETURN:   poly lcm: lcm of t and u
+NOTE:     Computes and returns the lowest common multiple of the polynomials t and u.
+SEE ALSO: basis, incremental_basis, crit_pair, spols
+KEYWORDS: degree, lowest common multiple, critical pairs"
+{
+  return(t*u/gcd(t,u));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static proc cps_of_degree(int d)
+{
+  int result_size;
+  p_d = list();
+  int start_time = timer;
+  result_size = 0;
+  for (int i = 1; i <= size(p_lcm); i++) {
+    if (d == deg(p_lcm[i])) {
+      result_size++;
+      p_d[result_size] = i;
+    }
+  }
+  cpsd_time = cpsd_time + timer - start_time;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc crit_pair(int k, int i)
+"USAGE:   crit_pair(k, l, i, g_prev); int k, int l, int i, list g_prev
+RETURN:   list cp: either the empty list or a list consisting of two elements, the indices of the critical pair
+NOTE:     Tests the given critical pairs on the F5 Criterion and deletes them if they are detected. Otherwise
+          the critical pair is returned as a list of indices cp where beforehand there can be a switch because
+          of the signatures possbily not being in the right order until now.
+SEE ALSO: equal_signatures, first_signature_smaller, incremental_basis, spols
+KEYWORDS: F5 Criterion, signatures, critical pairs"
+{
+  poly tk, tl, tgcd, tlcm, u1, u2, temp_u1, mul1, mul2, sig1, sig2, sig;
+  int temp_k, idx1, idx2, l;
+  list new_cp;
+  
+  int start_time = timer;
+  tk = leadmonom(polynomials[k]);
+  idx1 = indices[k];
+  mul1 = multipliers[k];
+  for (l = 1; l <= size(g_curr); l++) {
+    tl = leadmonom(polynomials[l]);
+    tgcd = gcd(tk,tl);
+    u1 = tl/tgcd;
+    sig1 = u1*mul1;
+    if ((idx1 == i) && top_reducible(sig1)) {
+      //printf("  (%s,%s): %s %s was rejected", k+7,l+7, u1*mul1, u2*mul2);
+      l++; continue;
+    }
+    idx2 = indices[l];
+    u2 = tk/tgcd;
+    mul2 = multipliers[l];
+    sig2 = u2*mul2;
+    if ((idx2 == i) && top_reducible(sig2)) {
+      //printf("  (%s,%s): %s %s was rejected", k,l, u1*mul1, u2*mul2);
+      l++; continue;
+    }
+    if ((idx1 == idx2) && (sig1 == sig2)) {
+      //printf("  (%s,%s): %s %s was rejected", k,l, u1*mul1, u2*mul2);
+      l++; continue;
+    }
+    if (is_rewritable(sig1,k)
+        || is_rewritable(sig2,l)) {
+      l++; continue;
+    }
+    tlcm = tk*u1;
+    if ((idx1 < idx2) || (idx1 == idx2 && sig1 < sig2)) {
+      temp_k = k;
+      k = l;
+      l = temp_k;
+      temp_u1 = u1;
+      u1 = u2;
+      u2 = temp_u1;
+      sig = sig2;
+    } else {
+      sig = sig1;
+    }
+    new_cp = k,l;
+    insert_pair(new_cp, tlcm, sig, u1, u2);
+  }
+  cp_time = cp_time + timer - start_time;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+proc insert_pair(list new_cp, poly tlcm, poly sig, poly u1, poly u2)
+{
+  int left, right, middle, here;
+  left = 1; right = size(p);
+  if (right == 0) {
+    here = 0;
+  } else {
+    while (left < (right - 1)) {
+      middle = (left + right) div 2;
+      if (p_sig[middle] == sig) {
+        left = middle;
+        right = middle;
+      }
+      if (p_sig[middle] > sig) {
+        right = middle;
+      }
+      if (p_sig[middle] < sig) {
+        left = middle;
+      }
+    }
+    if (p_sig[left] >= sig) {
+      here = left - 1;
+    } else {
+      if (p_sig[right] < sig) {
+        here = right;
+      } else {
+        here = right - 1;
+      }
+    }
+  }
+  p = insert(p, new_cp, here);
+  p_lcm = insert(p_lcm, tlcm, here);
+  p_sig = insert(p_sig, sig, here);
+  p_u = insert(p_u, u1, here);
+  p_v = insert(p_v, u2, here);
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc equal_signatures(int i, poly t, int j, poly u)
+"USAGE:   equal_signatures(i, t, j, u); int i, poly t, int j, poly u
+RETURN:   1 (both have the same signature) or 0 (both have different signatures)
+NOTE:     Check if the signatures of two polynomials building a critical pair are the same or not. This is an 
+          improvement to Stegers' and Faugere's implementation of F5. Such situations can happen in the case 
+          of non-regular sequences and would be detected later on by the Rewritten Criterion.
+SEE ALSO: basis, incremental_basis, crit_pair, spols
+KEYWORDS: signatures, critical pairs, non-regular sequences"
+{
+  if ((i == j) && (t == u)) {
+    return(1);
+  } else {
+    return(0);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc first_signature_smaller(int i, poly t, int j, poly u)
+"USAGE:   first_signature_smaller(i, t, j, u); int i, poly t, int j, poly u
+RETURN:   1 (if the first signature is smaller than the second signature) or 0 (else)
+NOTE:     Both signatures are compared, first by the index (i,j), if there is an equality  i=j 
+          then the terms of the signatures are compared, to decide which is the smaller one.
+SEE ALSO: equal_signatures, crit_pair, spols
+KEYWORDS: signatures, critical pairs"
+{
+  if (i < j) {
+    return(1);
+  }
+  if (i > j) {
+    return(0);
+  }
+  if (t < u) {
+    return(1);
+  } else {
+    return(0);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc top_reducible(poly t)
+"USAGE:   top_reducible(t, f); poly t, list f
+RETURN:   1 (if t is top reducible by an element of f) or 0 (else)
+NOTE:     Tests if poly t is top reducible by a polynomial from the list f.
+SEE ALSO: reduction, top_reduction, crit_pair, spols
+KEYWORDS: reduction, top reduction, critical pairs"
+{
+  int i;
+  int start_time = timer;
+  if (reduce(t, previous_lt) == 0) {
+    itr_time = itr_time + timer - start_time;
+    return(1);
+  }
+  itr_time = itr_time + timer - start_time;
+  return(0);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc spols()
+"USAGE:   spols(p_d); list p_d
+RETURN:   list S
+NOTE:     Builds the S-polynomials and tests if they are rewritable or not. If they are not rewritable the  
+          signature of the to be reduced, newly built S-polynomial is added to the lists rule_multiplier and
+          rule_redirect.
+SEE ALSO: sort_p_d_by_increasing_lcm, crit_pair, is_rewritable, add_labeled_polynomial, add_rule
+KEYWORDS: reduction, S-polynomial, rewritten criterion, rules"
+{
+  int i,k,l,num_S;
+  list S, new_pair;
+  poly s,t1,t2,u,v,new_sig;
+  
+  int start_time = timer;
+  //sort_pairs_by_increasing_sig();
+  // print("Sorted");
+  // print(p_d);
+  // print("---");
+  num_S = 0;
+  for (i = 1; i <= size(p_d); i++) {
+    k = p[p_d[i]][1];
+    l = p[p_d[i]][2];
+    u = p_u[p_d[i]];
+    v = p_v[p_d[i]];
+    new_sig = p_sig[p_d[i]];
+    if ((!is_rewritable(u*multipliers[k],k))
+        && (!is_rewritable(v*multipliers[l],l))) {
+      s = u*leadcoef(polynomials[l])*polynomials[k] - v*leadcoef(polynomials[k])*polynomials[l];
+      last_polynomial++;
+      add_labeled_polynomial(s,indices[k],new_sig,last_polynomial);
+      //new_pair = k,l;
+      generating_pairs[last_polynomial] = new_pair;
+      add_rule(new_sig, indices[k], last_polynomial);
+      if (s!=0) {
+        //printf("In spols pair (%s,%s) generated polynomial %s:%s", k, l, last_polynomial, s);
+        num_S++;
+        S[num_S] = last_polynomial;
+      }
+    }
+  }
+  S = sort_S_by_increasing_signature(S);
+  sp_time = sp_time + timer - start_time;
+  return(S);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc sort_S_by_increasing_signature(list S)
+"USAGE:   sort_S_by_increasing_signature(S); list S
+RETURN:   return value of the procedure quicksort_S_incr_sig(S, 1, size(S))
+NOTE:     Builds the S-polynomials and tests if they are rewritable or not. If they are not rewritable the  
+          signature of the to be reduced, newly built S-polynomial is added to the lists rule_multiplier and
+          rule_redirect.
+SEE ALSO: sort_pairs_by_increasing_lcm, quicksort_S_incr_sig
+KEYWORDS: signatures, lcm, quicksort, pivot"
+{
+  return(quicksort_S_incr_sig(S, 1, size(S)));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc quicksort_S_incr_sig(list S, int left, int right)
+"USAGE:   quicksort_S_incr_sig(S, left, right); list S, int left, int right
+RETURN:   list S: sorted list
+NOTE:     Sorts the list S by increasing signatures using the procedure partition_S_incr_sig.
+SEE ALSO: sort_pairs_by_increasing_lcm, partition_S_incr_sig
+KEYWORDS: signatures, lcm, quicksort, pivot"
+{
+  int pivot, newpivot;
+  if (right > left) {
+    pivot = left;
+    newpivot, S = partition_S_incr_sig(S, left, right, left);
+    S = quicksort_S_incr_sig(S, left, newpivot - 1);
+    S = quicksort_S_incr_sig(S, newpivot + 1, right);
+  }
+  return(S);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc partition_S_incr_sig(list S, int left, int right, int pivot)
+"USAGE:   partition_S_incr_sig(S, left, right, pivot); list S, int left, int right, int pivot
+RETURN:   int first_larger, list S: Data needed for recursively computing quicksort
+NOTE:     Partitioning the list S by the pivot element considering the signatures.
+SEE ALSO: sort_pairs_by_increasing_lcm, quicksort_S_incr_sig
+KEYWORDS: signatures, lcm, quicksort, pivot"
+{
+  int first_larger, i, pivot_value, temp;
+  
+  pivot_value = S[pivot];
+  S[pivot] = S[right];
+  S[right] = pivot_value;
+  first_larger = left;
+  for (i = left; i < right; i++) {
+    if (first_signature_smaller(indices[S[i]],multipliers[S[i]],indices[pivot_value],multipliers[pivot_value]))
+    {
+      temp = S[i];
+      S[i] = S[first_larger];
+      S[first_larger] = temp;
+      first_larger++;
+    }
+  }
+  temp = S[first_larger];
+  S[first_larger] = S[right];
+  S[right] = temp;
+  return(first_larger, S);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc sort_pairs_by_increasing_sig()
+"USAGE:   sort_pairs_by_increasing_sig(p); list p
+RETURN:   return value of the procedure quicksort_pairs_by_increasing_lcm
+NOTE:     Divides the list S by the pivot element considering the signatures.
+SEE ALSO: partition_S_incr_sig, quicksort_S_incr_sig, partition_pairs_by_increasing_lcm
+KEYWORDS: signatures, lcm, quicksort, pivot"
+{
+  quicksort_pairs_by_increasing_sig(1,size(p_d));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc quicksort_pairs_by_increasing_sig(int left, int right)
+"USAGE:   quicksort_pairs_by_increasing_sig(p_d, p_sig, left, right); list p, int left, int right
+RETURN:   list p: sorted list
+NOTE:     Sorts the list p with quicksort.
+SEE ALSO: partition_S_incr_sig, quicksort_S_incr_sig, partition_pairs_by_increasing_lcm
+KEYWORDS: lcm, quicksort, pivot"
+{
+  int pivot, newpivot;
+  if (right > left) {
+    pivot = left;
+    newpivot = partition_pairs_by_increasing_sig(left, right, pivot);
+    quicksort_pairs_by_increasing_sig(left, newpivot - 1);
+    quicksort_pairs_by_increasing_sig(newpivot + 1, right);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc partition_pairs_by_increasing_sig(int left, int right, int pivot)
+"USAGE:   partition_pairs_by_increasing_sig(p, left, right, pivot);
+          list p, int left, int right, int pivot
+RETURN:   int idx, list p: partitioned list p and new pivot element idx for sort_pairs_by_increasing_sig
+NOTE:     Divides the list p by the pivot element pivot considering the signatures
+          of the critical pairs investigated, and computes the new pivot element used by the procedure
+          sort_pairs_by_increasing_sig.
+SEE ALSO: partition_S_incr_sig, quicksort_S_incr_sig, sort_pairs_by_increasing_lcm
+KEYWORDS: signatures, lcm, quicksort, pivot"
+{
+  int idx, i;
+  int pivot_value, temp;
+  // place pivot all the way to the right
+  pivot_value = p_d[pivot];
+  p_d[pivot] = p_d[right];
+  p_d[right] = pivot_value;
+  idx = left;
+  for (i = left; i < right; i++) {
+    if (p_sig[p_d[i]] < p_sig[p_d[right]])
+    {
+      temp = p_d[i];
+      p_d[i] = p_d[idx];
+      p_d[idx] = temp;
+      idx++;
+    }
+  }
+  // return pivot to correct place
+  p_d[right] = p_d[idx];
+  p_d[idx] = pivot_value;
+  return(idx);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static proc trim_p()
+{
+  int offset, j;
+  int start_time = timer;
+  offset = 0;
+  for (int i = 1; i <= size(p_d); i++) {
+    j = p_d[i];
+    p = delete(p,j-offset);
+    p_lcm = delete(p_lcm,j-offset);
+    p_u = delete(p_u,j-offset);
+    p_v = delete(p_v,j-offset);
+    p_sig = delete(p_sig,j-offset);
+    offset++;
+  }
+  tp_time = tp_time + timer - start_time;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc add_labeled_polynomial(poly p, int i, poly u, int n)
+"USAGE:   add_labeled_polynomial(p, i, u, n); poly p, int i, poly u, int n
+RETURN:   nothing
+NOTE:     Adds a new polynomial with its signature.
+SEE ALSO: add_rule
+KEYWORDS: signatures, polynomials"
+{
+  polynomials[n] = p;
+  indices[n] = i;
+  multipliers[n] = u;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc add_rule(poly mul, int i, int k)
+"USAGE:   add_rule(mul, ind, k); poly mul, int ind, int k
+RETURN:   nothing
+NOTE:     Adds new rules to the list of rules for detecting other critical pairs to be rewritable.
+SEE ALSO: add_labeled_polynomial
+KEYWORDS: signatures, rules"
+{
+  rule_multiplier[i][size(rule_multiplier[i])+1] = mul;
+  rule_redirect[i][size(rule_redirect[i])+1] = k;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc reduction(list s)
+"USAGE:   reduction(s, g_prev, g_curr); list s, list g_prev, list g_curr
+RETURN:   list completed: Returns complete and as global variables all the data for further reduction processes.
+NOTE:     Reduces by g_prev and also calls the procedure top_reduction to top reduce by g_curr. If there is no          
+          reduction to zero the new element is added to further computations.
+SEE ALSO: insert_by_incr_sig, top_reduction, reduce
+KEYWORDS: reduction, top reduction, S-polynomials"
+{
+  int i, j, k, l;
+  list completed, newly_completed, redo, to_do;
+  poly h;
+  
+  int start_time = timer;
+  to_do = s;
+  g_topred = g_curr;
+  while (size(to_do) != 0) {
+    // to_do already sorted by signature, so no need to search for smallest
+    k = to_do[1];
+    to_do = delete(to_do, 1);
+    //polynomials[k] = reduce(polynomials[k],previous_gb);
+    newly_completed, redo = top_reduction(k);
+    completed = completed + newly_completed;
+    // for efficient find_reductor, changes were made
+    // that require newly_completed polynomials
+    // to show up *first* in g_topred
+    g_topred = newly_completed + g_topred;
+    for (j = 1; j <= size(redo); j++) {
+      to_do = insert_by_incr_sig(to_do, redo[j]);
+    }
+  }
+  red_time = red_time + timer - start_time;
+  return(completed);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc insert_by_incr_sig(list to_do, int new_do)
+"USAGE:   insert_by_incr_sig(to_do, new_do); list to_do, int new_do
+RETURN:   list to_do: New computed list with elements from new_do put into sorted by increasing sig.
+NOTE:     Top reduces elements, possibly returns two S-polynomials if there is a signature corruption 
+          during the reduction process. Prints a warning if there is a reduction to zero.
+SEE ALSO: reduction
+KEYWORDS: reduction, top reduction, S-polynomials"
+{
+  int i;
+  for (i = 1; i <= size(to_do); i++) {
+    if (!first_signature_smaller(indices[to_do[i]],multipliers[to_do[i]],indices[new_do],multipliers[new_do])) {
+      to_do = insert(to_do, new_do, i-1);
+      i = size(to_do) + 2;
+    }
+  }
+  if (i < size(to_do) + 2) {
+    to_do[i] = new_do;
+  }
+  return(to_do);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc top_reduction(int k)
+"USAGE:   top_reduction(k, g_prev, g_curr); int k, list g_prev, list g_curr
+RETURN:   list completed, list to_do: Returns all the data for further reduction processes.
+NOTE:     Puts elements for the list new_do into the list to_do, sorted by increasing lowest common multiple.
+SEE ALSO: insert_by_incr_sig, top_reduction, reduction
+KEYWORDS: reduction, top reduction, S-polynomials"
+{
+  int i, j, reduced;
+  poly p, q, u, sig, t, new_p;
+  def c;
+  list completed, to_do, J, new_pair;
+  
+  int start_time = timer;
+  reduced = 1;
+  p = polynomials[k];
+  t = leadmonom(p);
+  while(reduced) {
+    reduced = 0;
+    p = reduce(p, previous_gb);
+    if (p==0) {
+      printf("Polynomial %s reduced to zero!", k);
+      zero_reductions[size(zero_reductions)+1] = generating_pairs[k];
+      //print("---");
+      tr_time = tr_time + timer - start_time;
+      return(completed, to_do);
+    }
+    t = leadmonom(p);
+    J = find_reductor(t, sig, i);
+    if (size(J)==0) {
+      polynomials[k] = p / leadcoef(p);
+      completed[1] = k;
+      tr_time = tr_time + timer - start_time;
+      return(completed, to_do);
+    }
+    reduced = 1;
+    j = J[1];
+    q = polynomials[j];
+    u = leadmonom(p)/leadmonom(q);
+    c = leadcoef(p)/leadcoef(q);
+    new_p = p - c * u * q;
+    if (new_p != 0) {
+      new_p = new_p / leadcoef(new_p);
+    }
+    if (first_signature_smaller(indices[j], u*multipliers[j], indices[k], multipliers[k])) {
+      //polynomials[k] = p;
+      p = new_p;
+      t = leadmonom(p);
+    } else {
+      last_polynomial++;
+      add_labeled_polynomial(new_p, indices[j], u*multipliers[j], last_polynomial);
+      //printf("In topreduction pair (%s,%s) generated polynomial %s:%s", k, j, last_polynomial, new_p);
+      new_pair = j,k;
+      generating_pairs[last_polynomial] = new_pair;
+      add_rule(u*multipliers[j], indices[j], last_polynomial);
+      to_do[size(to_do)+1] = last_polynomial;
+    }
+  }
+  tr_time = tr_time + timer - start_time;
+  return(completed, to_do);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc find_reductor(poly t, poly mul_k, int idx_k);
+"USAGE:   find_reductor(k, g_prev, g_curr); int k, list g_prev, list g_curr
+RETURN:   list result: either the empty list if no reductor exists or a list consisting of 1 polynomial, the found reductor
+NOTE:     Searches for polynomial[j] to top reduce polynomial[k] whereas polynomial[j] need to be not detected by the
+          F5 Criterion nor by the Rewritten Criterion, and it is not allowed to have the same signature as the to be       
+          top reduced polynomial[k].
+SEE ALSO: top_reduction, is_rewritable
+KEYWORDS: f5, rewritten, top_reduction, signature"
+{
+  int i, j, idx_j, n;
+  list result;
+  poly tprime, u, mul_j;
+  
+  int start_time = timer;
+  n = size(g_topred) - size(g_prev);
+  for (i = 1; i <= n; i++) {
+    j = g_topred[i];
+    tprime = leadmonom(polynomials[j]);
+    u = t/tprime;
+    if (u != 0) {
+      mul_j = u*multipliers[j];
+      idx_j = indices[j];
+      if (
+         (!is_rewritable(mul_j,j))
+      && (!top_reducible(mul_j))
+      ) {
+        result[1] = j;
+        fr_time = fr_time + timer - start_time;
+        return(result);
+      }
+    }
+  }
+  fr_time = fr_time + timer - start_time;
+  return(result);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static proc is_rewritable(poly u, int k)
+"USAGE:   is_rewritable(u, k); poly u, int k
+RETURN:   boolean value
+NOTE:     Decides whether there is a rewriter for (u,k) or not.
+SEE ALSO: find_rewriting
+KEYWORDS: f5, rewritten"
+{
+  int idx, ctr, j;
+  poly mul_j;
+  
+  int start_time = timer;
+  idx = indices[k];
+  list rules = rule_multiplier[idx];
+  for (ctr = size(rules); ctr > 0; ctr--) {
+    mul_j = rules[ctr];
+    if ((u / mul_j) != 0) {
+      ir_time = ir_time + timer - start_time;
+      return(k!=rule_redirect[idx][ctr]);
+    }
+  }
+  ir_time = ir_time + timer - start_time;
+  return(0);
+}
+
+proc get_indices() {
+  return(indices);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc is_gb(ideal g)
+"USAGE:   is_gb(g); g ideal
+RETURN:   list bad: list of Spolys which do not reduce to zero
+NOTE:     Tests if a given list of polynomials corresponds to a Groebner basis.
+          If the list correspondsto one, the \"empty list\" is returned, if the list
+          does not the list of the Spolys not reducing to zero is returned.
+SEE ALSO: fglm, groebner, std
+KEYWORDS: f5, groebner basis, test
+EXAMPLE:  example is_gb; shows an example of the test if the ideal I=(xyz^3-x^2t^2,xz^2-y^2t,x^2y-z^2t) 
+                         is a Groebner basis in the ring R=(0,(x,y,z,t),dp) which it is not."
+{
+  poly ti, tj, ci, cj, gij, sij, rij;
+  list bad, newbad, checked_pairs, newpair, lts;
+  int i, j;
+  ideal id;
+  
+  for (i=1; i<=size(g); i++) {
+    id[i] = g[i];
+    lts[i] = lead(g[i]);
+  }
+  attrib(id, "isSB", 1);
+  for (i=1; i<size(g); i++) {
+    for (j=i+1; j<=size(g); j++) {
+      ti, tj = lead(g[i]), lead(g[j]);
+      gij = gcd(ti,tj);
+      if ((gij != 1) && (!b2(i,j,lts,checked_pairs))) {
+        sij = tj/gij * g[i] - ti/gij * g[j];
+        rij = reduce(sij, id);
+        if (rij != 0) {
+          newbad = i,j;
+          bad[size(bad)+1] = newbad;
+        }
+      }
+      newpair = i,j;
+      checked_pairs[size(checked_pairs)+1] = newpair;
+    }
+  }
+  return(bad);
+}
+example
+{ "EXAMPLE:";
+  fmtm();
+  print("basering:");
+  basering;
+  print("list:");
+  l;
+  print("Test if l corresponds to a GB:");
+  is_gb(l);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+proc b2(int i, int j, list lts, list checked_pairs)
+"USAGE:   b2(i,j,lts,checked_pairs); int i, int j, list lts, list checked_pairs
+RETURN:   boolean value
+NOTE:     Checks if the 2nd Buchberger Criterion holds. This is used here to   
+          check if a computed ideal by basis(l) really is a Groebner basis.
+SEE ALSO: fglm, groebner, std, is_gb
+KEYWORDS: 2nd Buchberger Criterion, Groebner basis, test
+{
+  int k, l, found;
+  poly ti, tj, lcmij;
+  list cp;
+  
+  ti = lts[i];
+  tj = lts[j];
+  lcmij = lcm(ti,tj);
+  for (k = 1; k <= size(lts) && found < 2; k++) {
+    if (lcmij / lts[k] != 0) {
+      for (l=1; l <= size(checked_pairs) && found < 2; l++) {
+        cp = checked_pairs[l];
+        if (((cp[1] == i) && (cp[2] == k))
+            || ((cp[1] == k) && (cp[2] == i))
+            || ((cp[1] == j) && (cp[2] == k))
+            || ((cp[1] == k) && (cp[2] == j))) {
+          found++;
+        }
+      }
+    }
+  }
+  return(found==2);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////------END------/////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
