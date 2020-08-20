@@ -1,6 +1,4 @@
 load('sidon_cryptosystem.sage')
-import fgb_sage
-##NOTE: FGB_SAGE MUST BE INSTALLED TO USE SOME FUNCTIONS
 """Function that returns the coeffiecient of the xth variable in the yth equation in the system
 
     Parameters: 
@@ -138,7 +136,7 @@ def minorAttack(q,k):
             
 ##Algebraic attack implementation is also here
 
-##A slightly different style of implementation from the minor attack, this first method returns a public key from a random sidon cryptosystem
+##This first method returns a public key from a random sidon cryptosystem
 ##with parameters q and k 
 def makePublicKey(q,k):
     basefield = GF(q)
@@ -149,8 +147,8 @@ def makePublicKey(q,k):
     matrixList, sidonbasis, mult_table, F_r_basis , origbasis = publicKey(y,q,F,F_r)
     return matrixList
     
-##This method solves the algebraic attack that extracts a and b, equivalent to the original message from the transmitted message. 
-##Most time intensive part is computing the first groebner basis. Computational time grows exponentially with k. 
+##This method returns the ideal associated with the algebraic attack. To solve, run a groebner basis algorithm on the ideal and then
+##find the zeros. 
 def algebraicAttack(q,k,a,b, matrixList):
     rhs = [a.row()*i*b.column() for i in matrixList]
     R_ = PolynomialRing(GF(q), ['x' + str(i) for i in range(2*k)] + ['xn'], order = "lex")
@@ -162,14 +160,4 @@ def algebraicAttack(q,k,a,b, matrixList):
     system = [a1.row()*i*b1.column() for i in matrixList]
     system = [system[i][0][0] - rhs[i][0][0]*xn^2 for i in range(len(system))]
     I = ideal(system)
-    gb = fgb_sage.groebner_basis(I)
-    I = ideal(gb)
-    I  = I.subs(x0 = 1)
-    I = I.subs(xn= 1)
-    R_  = R_.remove_var(xn)
-    R_  = R_.remove_var(x0)
-    gens = [R_(i) for i in I.gens()]
-    I = ideal(gens)
-    I = fgb_sage.groebner_basis(I)
-    I = I.ideal()
-    return I.variety(), matrixList
+    return I 
