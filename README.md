@@ -9,7 +9,7 @@ algorithm of choice on the ideal.
 The "Notebooks" folder contains all of the messy experiments and testing done during the project. Most of this code is not commented or documented. The important experiments and code will be put into 
 a separate folder. 
 
-###Code Examples-- Constructing and using the sidon cryptosystem 
+### Code Examples-- Constructing and using the sidon cryptosystem 
 Constructing the cryptosystem is easy. We make the sidon space and then pass the necessary info into the constructor for the cryptosystem: 
 '''
 load('sidon_cryptosystem.sage')
@@ -36,7 +36,7 @@ To decrypt the message, we simply call:
 mat = decrypt(message, y,q, F, F_r, F_r_basis, sidonbasis, origbasis, d,c)
 '''
 
-###Attacks 
+### Attacks 
 While actually solving the systems of equations that appear in these attacks is difficult, framework is provided to obtain the multivariate polynomial systems. 
 There are 3 main attacks implemented here: Direct (algebraic), Minrank Minor, and the Major Attack. Getting the ideals associated to the systems is simple, just call the method with 
 the appropriate parameters: 
@@ -46,6 +46,7 @@ I = algebraicAttack(q,k,a,b,matrixList)
 
 ##Ideal for minrank minor attack. Uses a random sidon cryptosystem. 
 I2 = minrankMinor(q,k)
+'''
 
 
 
