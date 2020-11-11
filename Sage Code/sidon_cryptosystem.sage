@@ -201,7 +201,6 @@ def publicKey(y,q, F, F_r):
     sidonbasis = [j + j^q*y for j in v]
     mult_table = vector(sidonbasis).column()*vector(sidonbasis).row()
     cob_matrix = F_r_basis.inverse()
-    print(cob_matrix)
     vec_list = [[0 for i in range(k)] for j in range(k)]
     
     ##Generate the public key M(V,B)

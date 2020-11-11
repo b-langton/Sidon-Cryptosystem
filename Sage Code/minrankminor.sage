@@ -84,9 +84,10 @@ def getIndices(y,x, k, r):
                 continuej = False
     return int(t1), int(a1), int(t2), int(a2), int(d), int(lx), int(ly), int(jx), int(jy)
     
-    
-##This function constructs the matrix associated to the minrank minor attack and returns the ideal that is
-##equivalent to the homogeneous system of equations that comes from the minor attack. Does not solve the system. r is 2. 
+'''   
+This function constructs the matrix associated to the minrank minor attack and returns the ideal that is
+equivalent to the homogeneous system of equations that comes from the minor attack. Does not solve the system. r is 2. 
+'''
 def minorAttack(q,k):
     r = 2
     basefield = GF(q)
@@ -146,9 +147,15 @@ def makePublicKey(q,k):
     y2, F2, F_r2, d2, c2 = ConstructSidon2k(q, k)
     matrixList, sidonbasis, mult_table, F_r_basis , origbasis = publicKey(y,q,F,F_r)
     return matrixList
-    
-##This method returns the ideal associated with the algebraic attack. To solve, run a groebner basis algorithm on the ideal and then
-##find the zeros. 
+'''    
+This method calculates the ideal associated with the algebraic attack. To solve, run a groebner basis algorithm on the ideal and then
+find the zeros. 
+The sidon cryptosystem being attacked is assumed to have r = 2.
+Parameters: 
+        q,k : parameters associated with construction of cryptosystem
+        a,b: the two vectors that make up the unencoded message, to be encoded with matrixList
+        matrixList: the public key for a sidon cryptosystem with parameters q and k
+'''
 def algebraicAttack(q,k,a,b, matrixList):
     rhs = [a.row()*i*b.column() for i in matrixList]
     R_ = PolynomialRing(GF(q), ['x' + str(i) for i in range(2*k)] + ['xn'], order = "lex")
