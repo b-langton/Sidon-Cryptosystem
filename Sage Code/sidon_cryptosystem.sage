@@ -216,6 +216,40 @@ def publicKey(y,q, F, F_r):
         matrixlist[i] = Matrix(basefield, k, lambda l,j: vec_list[l][j][i])
     return matrixlist, sidonbasis, mult_table, F_r_basis, origbasis
 
+def encrypt(a,b, matrixlist): 
+    ##Uses the public key to send the encrypted message
+    anslist = []
+    print(a,b,matrixlist)
+    for i in matrixlist: 
+        anslist += a.row()*i*b.column()
+    return anslist 
+
+
+def decrypt(anslist, y, q, F, F_r, F_r_basis, sidonbasis, origbasis, b = None, c = None): 
+    ##Decrpyts the message anslist
+    ##Calculate the original product in the sidon space
+    product = (anslist[0]*convertFromLong(F_r_basis[0],F,F_r))
+    
+    for i in range(len(anslist) - 1): 
+        product += anslist[i+1]*convertFromLong(F_r_basis[i+1], F, F_r)
+    r = len(F_r.modulus().list()) - 1 
+    
+    ##Factor the product
+    if r == 2: 
+        u,v = factor2(product[0], y,q, F, F_r, b, c)
+    else: 
+        u,v = factor(product[0], y,q, F, F_r)
+    print(product)
+    print((u + u^q*y)*(v + v^q*y))
+    
+    ##Represent the product over the sidon space basis
+    cob_matrix = origbasis.inverse() 
+  
+    u = vector(F(str(u)))*origbasis.inverse()
+    v = vector(F(str(v)))*origbasis.inverse() 
+    
+   
+    return u.column()*v.row()
 """Converts an element in Fq_n to a vector over F_q
     Parameter: An element of F_q^n 
     Returns: A vector over F_q of length n representing that element 
