@@ -2,16 +2,16 @@
 Codebase for: 
 N. Raviv, B. Langton, and I. Tamo, "Multivariate Public Key Cryptosystem from Sidon Spaces," Public Key Cryptography (PKC), 2021.
 ## Usage, Implementation
-All of the base code is written in Sage 9.0 . You must have this installed to be able to use the code!! 
+All of the base code is written in Sage 9.0 . You must have this installed to be able to use the code. 
 The useful, documented code is all located in the "Sage Code" Folder. This includes the implementation of the Sidon cryptosystem, as well as the implementations of the 3 major attacks included in the paper. 
 With the exception of the algebraic attack, these implementations do not solve the MP system generated, they only return the associated ideal. They can be solved by running your Groebner basis 
 algorithm of choice on the ideal. 
 
-The "Notebooks" folder contains all of the messy experiments and testing done during the project. Most of this code is not commented or documented. The important experiments and code will be put into 
+The "Notebooks" folder contains the experiments and testing. Most of this code is not commented or documented. The important experiments and code will be put into 
 a separate folder. 
 
 ### Code Examples-- Constructing and using the sidon cryptosystem 
-Constructing the cryptosystem is easy. We make the sidon space and then pass the necessary info into the constructor for the cryptosystem: 
+Constructing the cryptosystem is straightforward. We make the sidon space and then pass the necessary info into the constructor for the cryptosystem: 
 ```
 load('sidon_cryptosystem.sage')
 q = 7
@@ -21,7 +21,7 @@ y, F, F_r, d, c = ConstructSidon2k(q, k)
 key, sidonbasis, mult_table, F_r_basis , origbasis = publicKey(y,q,F,F_r)
 ```
 
-All of the other outputs are helpful in decrypting an encrypted message,
+All the other outputs are helpful in decrypting an encrypted message,
 but the key (public key) is the only thing you need to send messages: 
 
 ```
