@@ -39,7 +39,7 @@ mat = decrypt(message, y,q, F, F_r, F_r_basis, sidonbasis, origbasis, d,c)
 
 ### Attacks 
 While actually solving the systems of equations that appear in these attacks is difficult, framework is provided to obtain the multivariate polynomial systems. 
-There are 3 main attacks implemented here: Direct (algebraic), Minrank Minor, and the Major Attack. Getting the ideals associated to the systems is simple, just call the method with 
+There are 3 main attacks implemented here: Direct (Section 5.2), Minrank Minor (Section 4.2), and the "Major" attack (Section 5.1). Getting the ideals associated to the systems is simple, just call the method with 
 the appropriate parameters: 
 ```
 ##Ideal for algebraic attack
