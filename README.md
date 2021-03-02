@@ -1,5 +1,5 @@
 # Sidon-Cryptosystem
-Codebase for the upcoming paper, "Multivariate Public Key Cryptosystem from Sidon Spaces" 
+Codebase for: N. Raviv, B. Langton, and I. Tamo, "Multivariate Public Key Cryptosystem from Sidon Spaces," Public Key Cryptography (PKC), 2021.
 ## Usage, Implementation
 All of the base code is written in Sage 9.0 . You must have this installed to be able to use the code!! 
 The useful, documented code is all located in the "Sage Code" Folder. This includes the implementation of the Sidon cryptosystem, as well as the implementations of the 3 major attacks included in the paper. 
